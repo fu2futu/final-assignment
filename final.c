@@ -2,14 +2,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
-/*
-to do
-アイテム情報を記憶
-playerのパラメータを記憶
-敵のパラメータを記憶
-バトルフェーズの記述
-ゴールの設定
-*/
+//* to do
+////アイテム情報を記憶
+////playerのパラメータを記憶
+////敵のパラメータを記憶
+//*バトルフェーズの記述
+//*ゴールの設定
+
 #define LINE 7
 #define COLUMN 20
 #define P_LOCATION_X 1
@@ -37,6 +36,12 @@ typedef struct
     int hp;
     int max_hp;
     int defense;
+} Character;
+
+typedef struct
+{
+    Character base;
+    char inventory[15][32];
 } Player;
 
 typedef struct
@@ -47,11 +52,12 @@ typedef struct
     int is_enemy;
     int is_item;
     Item_effect item;
+    Character enemy;
 } Cell;
 
 void stage_init(Cell stage[][LINE]);
 void print_stage(Cell stage[][LINE]);
-void game_play(Cell stage[][LINE], int *player_x, int *player_y, int *gaming, Player *player, int *item_num, char inventory[][32], Item_effect items[], int *item_count);
+void game_play(Cell stage[][LINE], int *player_x, int *player_y, int *gaming, Player *player, int *item_num, Item_effect items[], int *item_count);
 void battle(Cell stage[][LINE], int *player_x, int *player_y);
 Item_effect item_pick(Item_effect item[]);
 
@@ -75,7 +81,6 @@ int main(int argument_count, char *arguments[])
         {"蟹光線", 100, -20, 0, 0, 0},
     };
     Player player;
-    char inventory[15][32];
     int item_num = 0, item_count = 0;
     if (argument_count == 2 && strcmp(arguments[0], "./gameworld") == 0)
     {
@@ -87,25 +92,66 @@ int main(int argument_count, char *arguments[])
         }
         Cell stage[COLUMN][LINE];
         int player_x = 0, player_y = 0, gaming = 1;
+        char line[1024]; // 一時的な保存先
+        if (fgets(line, sizeof(line), fp) == NULL)
+        {
+            printf("ファイル形式が不正です。\n");
+            fclose(fp);
+            return 1;
+        }
+        item_num = atoi(strtok(line, ",\n"));
         for (int i = 0; i < LINE; i++)
         {
-            for (int j = 0; j < COLUMN; j++)
+            if (fgets(line, sizeof(line), fp) == NULL)
+                break; // 1行読み込み
+            // lineを,\nで分割
+            char *cell = strtok(line, ",\n");
+            for (int j = 0; j < COLUMN && cell != NULL; j++)
             {
-                int ch;
-                do
+                stage[j][i].mark = cell[0];
+                stage[j][i].is_wall = (cell[0] == '#');
+                if (cell[0] == 'P')
                 {
-                    ch = fgetc(fp); // 改行スキップのために do-while にする
-                } while (ch == '\n' || ch == '\r');
-                stage[j][i].mark = (char)ch;
-                stage[j][i].is_wall = (ch == '#');
-                stage[j][i].is_player = (ch == 'P');
-                stage[j][i].is_enemy = (ch == 'E');
-                stage[j][i].is_item = (ch == 'I');
-                if (ch == 'P')
-                {
+                    stage[j][i].is_player = (cell[0] == 'P');
                     player_x = j;
                     player_y = i;
+                    player.base.level = atoi(strtok(NULL, ",\n"));
+                    player.base.exp = atoi(strtok(NULL, ",\n"));
+                    player.base.power = atoi(strtok(NULL, ",\n"));
+                    player.base.hp = atoi(strtok(NULL, ",\n"));
+                    player.base.max_hp = atoi(strtok(NULL, ",\n"));
+                    player.base.defense = atoi(strtok(NULL, ",\n"));
+                    for (int temp = 0; temp < item_num; temp++)
+                    {
+                        cell = strtok(NULL, ",\n");
+                        strcpy(player.inventory[temp], cell);
+                    }
                 }
+
+                else if (cell[0] == 'E')
+                {
+                    stage[j][i].is_enemy = (cell[0] == 'E');
+                    stage[j][i].enemy.level = atoi(strtok(NULL, ",\n"));
+                    stage[j][i].enemy.exp = atoi(strtok(NULL, ",\n"));
+                    stage[j][i].enemy.power = atoi(strtok(NULL, ",\n"));
+                    stage[j][i].enemy.hp = atoi(strtok(NULL, ",\n"));
+                    stage[j][i].enemy.max_hp = atoi(strtok(NULL, ",\n"));
+                    stage[j][i].enemy.defense = atoi(strtok(NULL, ",\n"));
+                }
+
+                else if (cell[0] == 'I')
+                {
+                    stage[j][i].is_item = (cell[0] == 'I');
+                    cell = strtok(NULL, ",\n");
+                    strcpy(stage[j][i].item.name, cell);
+                    stage[j][i].item.power = atoi(strtok(NULL, ",\n"));
+                    stage[j][i].item.hp = atoi(strtok(NULL, ",\n"));
+                    stage[j][i].item.max_hp = atoi(strtok(NULL, ",\n"));
+                    stage[j][i].item.defense = atoi(strtok(NULL, ",\n"));
+                    stage[j][i].item.type = atoi(strtok(NULL, ",\n"));
+                    item_count++;
+                }
+                cell = strtok(NULL, ",\n");
             }
         }
         fclose(fp);
@@ -114,7 +160,7 @@ int main(int argument_count, char *arguments[])
         printf("Player location: (%d, %d)\n", player_x, player_y);
         while (gaming)
         {
-            game_play(stage, &player_x, &player_y, &gaming, &player, &item_num, inventory, items, &item_count);
+            game_play(stage, &player_x, &player_y, &gaming, &player, &item_num, items, &item_count);
         }
 
         print_stage(stage);
@@ -141,6 +187,12 @@ int main(int argument_count, char *arguments[])
         stage[P_LOCATION_X][P_LOCATION_Y].is_player = 1;
         stage[E_LOCATION_X][E_LOCATION_Y].mark = 'E'; // 敵の位置設定
         stage[E_LOCATION_X][E_LOCATION_Y].is_enemy = 1;
+        stage[E_LOCATION_X][E_LOCATION_Y].enemy.level = 1; // 敵の情報
+        stage[E_LOCATION_X][E_LOCATION_Y].enemy.exp = 30;
+        stage[E_LOCATION_X][E_LOCATION_Y].enemy.power = 20;
+        stage[E_LOCATION_X][E_LOCATION_Y].enemy.hp = 100;
+        stage[E_LOCATION_X][E_LOCATION_Y].enemy.max_hp = 100;
+        stage[E_LOCATION_X][E_LOCATION_Y].enemy.defense = 10;
 
         Item_effect item;
         srand((unsigned int)time(NULL)); // ランダム配置
@@ -161,7 +213,7 @@ int main(int argument_count, char *arguments[])
 
         while (gaming)
         {
-            game_play(stage, &player_x, &player_y, &gaming, &player, &item_num, inventory, items, &item_count);
+            game_play(stage, &player_x, &player_y, &gaming, &player, &item_num, items, &item_count);
         }
         print_stage(stage);
     }
@@ -214,7 +266,7 @@ Item_effect item_pick(Item_effect item[])
     return item[r];
 }
 
-void game_play(Cell stage[][LINE], int *player_x, int *player_y, int *gaming, Player *player, int *item_num, char inventory[][32], Item_effect items[], int *item_count)
+void game_play(Cell stage[][LINE], int *player_x, int *player_y, int *gaming, Player *player, int *item_num, Item_effect items[], int *item_count)
 {
     char input[50];
     int move = 0;
@@ -330,12 +382,13 @@ void game_play(Cell stage[][LINE], int *player_x, int *player_y, int *gaming, Pl
             if (move == 1)
                 printf("不明な入力: %s\n", token);
         }
-        if (stage[*player_x][*player_y].is_enemy == 1)
-        { // 敵とぶつかった時処理
+        if (stage[*player_x][*player_y].is_enemy == 1) // 敵とぶつかった時処理
+        {
             printf("敵が襲いかかってきた\n");
             battle(stage, player_x, player_y);
             break;
         }
+
         if (stage[*player_x][*player_y].is_item == 1)
         { // アイテムを拾った時処理
             if (*item_num >= 10)
@@ -362,13 +415,13 @@ void game_play(Cell stage[][LINE], int *player_x, int *player_y, int *gaming, Pl
                 printf("defense +%d\n", item.defense);
             else
                 printf("defense %d\n", item.defense);
-            strcpy(inventory[*item_num], item.name);
+            strcpy(player->inventory[*item_num], item.name);
             (*item_num)++;
             printf("アイテムをインベントリに追加しました（コマンド'i'で表示）。\n");
-            player->power += item.power;
-            player->hp += item.hp;
-            player->max_hp += item.max_hp;
-            player->defense += item.defense;
+            player->base.power += item.power;
+            player->base.hp += item.hp;
+            player->base.max_hp += item.max_hp;
+            player->base.defense += item.defense;
             stage[*player_x][*player_y].is_item = 0;
             (*item_count)--;
         }
@@ -394,14 +447,56 @@ void game_play(Cell stage[][LINE], int *player_x, int *player_y, int *gaming, Pl
         }
         else
         {
+            fprintf(fp, "%d\n", *item_num);
             for (int i = 0; i < LINE; i++)
             {
                 for (int j = 0; j < COLUMN; j++)
                 {
-                    fputc(stage[j][i].mark, fp);
+                    if (stage[j][i].is_item)
+                    {
+                        fprintf(fp, "I,%s,%d,%d,%d,%d,%d",
+                                stage[j][i].item.name,
+                                stage[j][i].item.power,
+                                stage[j][i].item.hp,
+                                stage[j][i].item.max_hp,
+                                stage[j][i].item.defense,
+                                stage[j][i].item.type);
+                    }
+                    else if (stage[j][i].is_player)
+                    {
+                        fprintf(fp, "P,%d,%d,%d,%d,%d,%d,",
+                                player->base.level,
+                                player->base.exp,
+                                player->base.power,
+                                player->base.hp,
+                                player->base.max_hp,
+                                player->base.defense);
+                        for (int temp = 0; temp < *item_num - 1; temp++)
+                        {
+                            fprintf(fp, "%s,", player->inventory[temp]);
+                        }
+                        fprintf(fp, "%s", player->inventory[*item_num - 1]); // 最後のアイテムはカンマなしで出力
+                    }
+                    else if (stage[j][i].is_enemy)
+                    {
+                        fprintf(fp, "E,%d,%d,%d,%d,%d,%d",
+                                stage[j][i].enemy.level,
+                                stage[j][i].enemy.exp,
+                                stage[j][i].enemy.power,
+                                stage[j][i].enemy.hp,
+                                stage[j][i].enemy.max_hp,
+                                stage[j][i].enemy.defense);
+                    }
+                    else // #か.のとき
+                    {
+                        fprintf(fp, "%c", stage[j][i].mark);
+                    }
+                    if (j < COLUMN - 1)
+                        fprintf(fp, ",");
                 }
-                fputc('\n', fp); // 改行を追加
+                fprintf(fp, "\n");
             }
+
             fclose(fp);
             printf("ゲームの状態が保存されました。\n");
         }
@@ -425,7 +520,7 @@ void game_play(Cell stage[][LINE], int *player_x, int *player_y, int *gaming, Pl
         {
             for (int i = 0; i < *item_num; i++)
             {
-                printf("%d. %s\n", i + 1, inventory[i]);
+                printf("%d. %s\n", i + 1, player->inventory[i]);
             }
         }
         printf("アイテム総数: %d/10\n", *item_num);
